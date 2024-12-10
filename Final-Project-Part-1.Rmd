@@ -1,0 +1,114 @@
+---
+title: "NYPD Shooting Incident Analysis"
+output:
+  pdf_document: default
+  html_document: default
+date: "2022-11-13"
+---
+
+### setup environment
+```{r setup, echo=TRUE}
+library(tinytex)
+library(tidyverse)
+```
+### read in data
+```{r data, echo=TRUE}
+data <- read.csv('https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD')
+data$OCCUR_DATE = as.Date(data$OCCUR_DATE, format='%m/%d/%Y')
+```
+### tidy data
+```{r tidy, echo=TRUE}
+boro_data <- data %>%
+  pivot_longer(cols = c('BORO'),
+               names_to = 'CLASSIFICATION',
+               values_to = 'LOCATION',
+               values_transform = as.character) %>%
+  select(-c('X_COORD_CD','Y_COORD_CD','Latitude','Longitude', 'LOCATION_DESC',
+            'PERP_AGE_GROUP', 'PERP_SEX','PERP_RACE','VIC_AGE_GROUP','VIC_SEX','VIC_RACE', 'Lon_Lat',
+            'JURISDICTION_CODE','OCCUR_TIME','INCIDENT_KEY','PRECINCT'))
+precinct_data <- data %>%
+  pivot_longer(cols = c('PRECINCT'),
+               names_to = 'CLASSIFICATION',
+               values_to = 'LOCATION',
+               values_transform = as.character) %>%
+  select(-c('BORO', 'X_COORD_CD','Y_COORD_CD','Latitude','Longitude', 'LOCATION_DESC',
+            'PERP_AGE_GROUP', 'PERP_SEX','PERP_RACE','VIC_AGE_GROUP','VIC_SEX','VIC_RACE', 'Lon_Lat',
+            'JURISDICTION_CODE','OCCUR_TIME','INCIDENT_KEY'))  
+```
+### add death indicator for count
+```{r death indicator, echo=TRUE}
+boro_data$SHOOTINGS = 1
+boro_data$DEATHS <- with(data, ifelse(STATISTICAL_MURDER_FLAG == "true", 1, 0))
+precinct_data$SHOOTINGS = 1
+precinct_data$DEATHS <- with(data, ifelse(STATISTICAL_MURDER_FLAG == "true", 1, 0))
+```
+### group by Boro and Precinct and Aggregate
+```{r group by, echo=TRUE}
+shootings_by_boro <- boro_data %>%
+  group_by(OCCUR_DATE, LOCATION) %>%
+  summarize(SHOOTINGS = sum(SHOOTINGS),
+            DEATHS = sum(DEATHS))
+shootings_by_precinct <- precinct_data %>%
+  group_by(OCCUR_DATE, LOCATION) %>%
+  summarize(SHOOTING = sum(SHOOTINGS),
+            DEATHS = sum(DEATHS))
+```
+### visualize data
+```{r visualize, echo=TRUE}
+shootings_by_boro %>%
+  filter(SHOOTINGS > 1, LOCATION=="BROOKLYN", between(OCCUR_DATE, as.Date("2020-01-01"), as.Date("2020-12-31"))) %>%
+  ggplot(aes(x=OCCUR_DATE, y=SHOOTINGS)) +
+  geom_line(aes(color="SHOOTINGS")) +
+  geom_point(aes(color = "SHOOTINGS")) + 
+  geom_line(aes(y = DEATHS, color = "DEATHS")) + 
+  geom_point(aes(y = DEATHS, color = "DEATHS")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Shootings in Brooklyn in 2020", y = NULL)
+```
+What causes shootings to spike in summer, and decrease in winter?
+```{r precinct visualization, echo=TRUE}
+shootings_by_precinct %>%
+  filter(SHOOTING > 1, LOCATION=="75", between(OCCUR_DATE, as.Date("2020-01-01"), as.Date("2020-12-31"))) %>%
+  ggplot(aes(x=OCCUR_DATE, y=SHOOTING)) +
+  geom_line(aes(color="SHOOTING")) +
+  geom_point(aes(color = "SHOOTING")) + 
+  geom_line(aes(y = DEATHS, color = "DEATHS")) + 
+  geom_point(aes(y = DEATHS, color = "DEATHS")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Shootings in Precinct 75 in 2020", y = NULL)
+```
+The 75th precinct seems to follow this same pattern. Let's look at a different year to see if it is a fluke.
+```{r visualize 2, echo=TRUE}
+shootings_by_boro %>%
+  filter(SHOOTINGS > 1, LOCATION=="BROOKLYN", between(OCCUR_DATE, as.Date("2012-01-01"), as.Date("2012-12-31"))) %>%
+  ggplot(aes(x=OCCUR_DATE, y=SHOOTINGS)) +
+  geom_line(aes(color="SHOOTINGS")) +
+  geom_point(aes(color = "SHOOTINGS")) + 
+  geom_line(aes(y = DEATHS, color = "DEATHS")) + 
+  geom_point(aes(y = DEATHS, color = "DEATHS")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Shootings in Brooklyn in 2020", y = NULL)
+```
+The pattern is definitely still there, though subtler. Let's look at a different Borough.
+```{r visualize 3, echo=TRUE}
+shootings_by_boro %>%
+  filter(SHOOTINGS > 1, LOCATION=="MANHATTAN", between(OCCUR_DATE, as.Date("2020-01-01"), as.Date("2020-12-31"))) %>%
+  ggplot(aes(x=OCCUR_DATE, y=SHOOTINGS)) +
+  geom_line(aes(color="SHOOTINGS")) +
+  geom_point(aes(color = "SHOOTINGS")) + 
+  geom_line(aes(y = DEATHS, color = "DEATHS")) + 
+  geom_point(aes(y = DEATHS, color = "DEATHS")) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 90)) +
+  labs(title = "Shootings in Brooklyn in 2020", y = NULL)
+```
+The patten is not as strong, though the massive spike in the year does come in July.
+
+### Conclusion and Bias Identification
+
+This data shows a surprising correlation to the time of the year, and seems to follow a consistent pattern year over year, in each Borough and Precinct. It is clear that any modeling work would need to be most like time-series based, and some interesting other variables related to season, perhaps temperature, could be brought in for that work. Shootings per day would also be very valuable in predicting Deaths by shooting per day. Not only does that statistic provide the ceiling for the other, but there seems to be some predictability in the fatality rate of a shooting. 
+
+Some bias that could have been introduced in the collection of this data is that, since these reports were provided by the police departments themselves, there could have been an increased rate of reporting in areas with an increased police presence, and vice versa in others. In the case of my personal bias, I can imagine myself making some assumptions about the frequency of shootings based on the demographic makeup of a neighborhood or borough, so I excluded all personal or demographic information about the perpetrators or victims in my analysis to mitigate this.
